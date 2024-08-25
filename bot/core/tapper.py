@@ -24,7 +24,12 @@ class Tapper:
         self.user_id = 0
 
     async def get_tg_web_data(self, proxy: str | None) -> str:
-        proxy_dict = Proxy.from_str(proxy).as_dict() if proxy else None
+        if proxy:
+            proxy = Proxy.from_str(proxy)
+            proxy_dict = dict(scheme=proxy.protocol, hostname=proxy.host, port=proxy.port, username=proxy.login, password=proxy.password)
+        else:
+            proxy_dict = None
+
         self.tg_client.proxy = proxy_dict
     
         try:
