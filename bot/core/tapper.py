@@ -39,7 +39,7 @@ class Tapper:
                     if message.text and message.text.startswith('/start'):
                         break
                 else:
-                    ref_id = settings.REF_ID or 'ref_acs_c-Zl_DyApG'
+                    ref_id = settings.REF_ID
                     await self.tg_client.send_message("snapster_bot", f"/start {ref_id}")
     
             while True:
