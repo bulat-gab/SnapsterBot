@@ -1,11 +1,14 @@
-version: '3'
+version: "3"
 services:
   bot:
-    container_name: 'SnapsterBot'
+    container_name: "SnapsterBot"
     build:
       context: .
     stop_signal: SIGINT
     restart: unless-stopped
     command: "python3 main.py -a 1"
     volumes:
-      - .:/app
+      - ./sessions:/app/sessions
+      - ./do_not_commit.proxies.json:/app/do_not_commit.proxies.json
+    env_file:
+      - .env
