@@ -9,7 +9,6 @@ from better_proxy import Proxy
 from pyrogram import Client
 from pyrogram.errors import Unauthorized, UserDeactivated, AuthKeyUnregistered, FloodWait
 from pyrogram.raw.functions.messages import RequestWebView
-
 from random import randint
 
 from bot.core.snapster_client import SnapsterClient
@@ -65,13 +64,17 @@ class Tapper:
         try:
             if not self.tg_client.is_connected:
                 await self.tg_client.connect()
+                start_command_found = False
+                
                 async for message in self.tg_client.get_chat_history('snapster_bot'):
                     if message.text and message.text.startswith('/start'):
+                        start_command_found = True
                         break
-                    else:
-                        ref_id = settings.REF_ID
-                        await self.tg_client.send_message("snapster_bot", f"/start {ref_id}")
-    
+
+                if not start_command_found:
+                    ref_id = settings.REF_ID
+                    await self.tg_client.send_message("snapster_bot", f"/start {ref_id}")
+                        
             while True:
                 try:
                     peer = await self.tg_client.resolve_peer('snapster_bot')
