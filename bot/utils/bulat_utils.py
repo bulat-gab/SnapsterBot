@@ -1,4 +1,4 @@
-from random import random
+import random
 from better_proxy import Proxy
 from pyrogram import Client
 import json
