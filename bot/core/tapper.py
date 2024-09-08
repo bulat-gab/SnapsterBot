@@ -22,6 +22,7 @@ class Tapper:
         self.session_name = tg_client.name
         self.tg_client = tg_client
         self.user_id = 0
+        self.url = "https://prod.snapster.bot/"
 
     async def get_tg_web_data(self, proxy: str | None) -> str:
         if proxy:
@@ -51,7 +52,7 @@ class Tapper:
                     logger.info(f"{self.session_name} | Sleep {fl.value}s")
                     await asyncio.sleep(fl.value + 3)
     
-            web_view = await self.tg_client.invoke(RequestWebView(peer=peer, bot=peer, platform='android',from_bot_menu=False, url='https://snapster.psylabs.tech/'))
+            web_view = await self.tg_client.invoke(RequestWebView(peer=peer, bot=peer, platform='android',from_bot_menu=False, url=self.url))
 
             auth_url = web_view.url
             tg_web_data = unquote(string=unquote(string=auth_url.split('tgWebAppData=', maxsplit=1)[1].split('&tgWebAppVersion', maxsplit=1)[0]))
@@ -70,7 +71,7 @@ class Tapper:
             await asyncio.sleep(3)
 
     async def daily_claim(self, http_client: aiohttp.ClientSession) -> bool:
-        url = "https://snapster.psylabs.tech/api/user/claimMiningBonus"
+        url = f"{self.url}api/user/claimMiningBonus"
         payload = { "telegramId": f"{self.user_id}" }
 
         try:
