@@ -1,4 +1,5 @@
 import asyncio
+import sys
 from urllib.parse import unquote, quote
 import aiohttp
 import json
@@ -10,12 +11,17 @@ from pyrogram import Client
 from pyrogram.errors import Unauthorized, UserDeactivated, AuthKeyUnregistered, FloodWait
 from pyrogram.raw.functions.messages import RequestWebView
 from datetime import datetime
-import random
+from time import time
+from random import randint
+
+from bot.core.snapster_client import SnapsterClient
+from bot.utils.datetime_utils import convert_to_local_and_unix
 from .agents import generate_random_user_agent
 from bot.utils import logger
 from bot.exceptions import InvalidSession
 from .headers import headers
 from bot.config import settings
+from bot.utils import bulat_utils
 
 class Tapper:
     def __init__(self, tg_client: Client):
@@ -23,6 +29,32 @@ class Tapper:
         self.tg_client = tg_client
         self.user_id = 0
         self.url = "https://prod.snapster.bot/"
+        self.snapster: SnapsterClient = None
+        self.next_claim_dt = None
+
+    def info(self, message):
+        from bot.utils import info
+        info(f"<light-yellow>{self.session_name}</light-yellow> | {message}")
+
+    def debug(self, message):
+        from bot.utils import debug
+        debug(f"<light-yellow>{self.session_name}</light-yellow> | {message}")
+
+    def warning(self, message):
+        from bot.utils import warning
+        warning(f"<light-yellow>{self.session_name}</light-yellow> | {message}")
+
+    def error(self, message):
+        from bot.utils import error
+        error(f"<light-yellow>{self.session_name}</light-yellow> | {message}")
+
+    def critical(self, message):
+        from bot.utils import critical
+        critical(f"<light-yellow>{self.session_name}</light-yellow> | {message}")
+
+    def success(self, message):
+        from bot.utils import success
+        success(f"<light-yellow>{self.session_name}</light-yellow> | {message}")
 
     async def get_tg_web_data(self, proxy: str | None) -> str:
         if proxy:
@@ -39,9 +71,9 @@ class Tapper:
                 async for message in self.tg_client.get_chat_history('snapster_bot'):
                     if message.text and message.text.startswith('/start'):
                         break
-                else:
-                    ref_id = settings.REF_ID
-                    await self.tg_client.send_message("snapster_bot", f"/start {ref_id}")
+                    else:
+                        ref_id = settings.REF_ID
+                        await self.tg_client.send_message("snapster_bot", f"/start {ref_id}")
     
             while True:
                 try:
@@ -70,27 +102,6 @@ class Tapper:
             logger.error(f"{self.session_name} | Unknown error during Authorization: {html.escape(str(error))}")
             await asyncio.sleep(3)
 
-    async def daily_claim(self, http_client: aiohttp.ClientSession) -> bool:
-        url = f"{self.url}api/user/claimMiningBonus"
-        payload = { "telegramId": f"{self.user_id}" }
-
-        try:
-            async with http_client.post(url=url, json=payload) as response:
-                if response.status == 200:
-                    response_data = await response.json()
-                    if response_data.get("result"):
-                        points_claimed = response_data["data"]["pointsClaimed"]
-                        points_count = response_data["data"]["user"]["pointsCount"]
-                        logger.success(f"{self.session_name} | Points claimed: {points_claimed}, Total points: {points_count}")
-                        return True
-                    else:
-                        logger.error(f"{self.session_name} | Daily claim failed: {json.dumps(response_data)}")
-                else:
-                    logger.error(f"{self.session_name} | Unexpected response: {response.status}, {html.escape(await response.text())}")
-        except Exception as error:
-            logger.error(f"{self.session_name} | Daily claim error: {html.escape(str(error))}")
-        return False
-
     async def check_proxy(self, http_client: aiohttp.ClientSession, proxy: Proxy) -> None:
         try:
             response = await http_client.get(url='https://httpbin.org/ip', timeout=aiohttp.ClientTimeout(5))
@@ -100,45 +111,121 @@ class Tapper:
             escaped_error = str(error).replace('<', '&lt;').replace('>', '&gt;')
             logger.error(f"{self.session_name} | Proxy: {proxy} | Error: {escaped_error}")
 
+    async def auto_farm(self):
+        try:
+            claim = await self.snapster.claim_mining()
+            if claim.get("result"):
+                self.success(f"Claimed {claim.get('data').get('pointsClaimed')} points.")
+
+            referrals = await self.snapster.get_referral_points()
+            ref_points = referrals.get('data').get('pointsToClaim')
+            if ref_points > 0:
+                claim_ref = await self.snapster.claim_referrals()
+                claimed_points = claim_ref.get('data').get('pointsClaimed')
+                self.success(f"Claimed {claimed_points} referral points.")
+
+        except Exception as error:
+            logger.error(f"{self.session_name} | Unknown error while claiming: {error}")
+            await asyncio.sleep(delay=3)
+
+    async def auto_tasks(self):
+        try:
+            quests = await self.snapster.get_quests()
+            if not quests:
+                self.info("Quests not found.")
+                return
+
+            for quest in quests.get('data'):
+                if quest.get('type') == 'REFERRAL':
+                    continue
+                
+                id = quest.get('id')
+                title = quest.get('title')
+
+                if quest.get('status') == 'EARN':
+                    start = await self.snapster.start_quest(id)
+
+                    if start.get('result'):
+                        self.info(f"Task {title} started.")
+                        await asyncio.sleep(delay=3)
+
+                elif quest.get('status') == 'UNCLAIMED':
+                    claim = await self.snapster.claim_quest(id)
+                    if claim.get('result'):
+                        self.success(f"Task {title} claimed.")
+                        await asyncio.sleep(delay=3)
+
+        except Exception as error:
+            logger.error(f"{self.session_name} | Unknown error while auto tasks: {error}")
+            await asyncio.sleep(delay=3)
+            
     async def run(self, proxy: str | None) -> None:
-        proxy_conn = ProxyConnector().from_url(proxy) if proxy else None
+        if settings.USE_RANDOM_DELAY_IN_RUN:
+            random_delay = randint(settings.RANDOM_DELAY_IN_RUN[0], settings.RANDOM_DELAY_IN_RUN[1])
+            logger.info(f"{self.tg_client.name} | Run for <lw>{random_delay}s</lw>")
 
-        async with CloudflareScraper(headers=headers, connector=proxy_conn) as http_client:
-            if proxy:
-                await self.check_proxy(http_client=http_client, proxy=proxy)
-            tg_web_data = await self.get_tg_web_data(proxy=proxy)
+            await asyncio.sleep(delay=random_delay)
+
             while True:
-                try:
+                 proxy_conn = ProxyConnector().from_url(proxy) if proxy else None
+                 async with CloudflareScraper(headers=headers, connector=proxy_conn) as http_client:
+                    if proxy:
+                        await self.check_proxy(http_client=http_client, proxy=proxy)
+                    
+                    tg_web_data = await self.get_tg_web_data(proxy=proxy)
                     if not tg_web_data:
-                        continue
+                        self.critical("Could not get tg_web_data")
+                        sys.exit()
+                    http_client = self.__prepare_http_client(http_client, tg_web_data)
+                    self.snapster = SnapsterClient(self.session_name, self.user_id, http_client)
 
-                    tg_web_data_parts = tg_web_data.split('&')
-                    query_id = tg_web_data_parts[0].split('=')[1]
-                    user_data = quote(tg_web_data_parts[1].split('=')[1])
-                    auth_date = tg_web_data_parts[2].split('=')[1]
-                    hash_value = tg_web_data_parts[3].split('=')[1]
+                    try:
+                        if settings.DAILY_BONUS:
+                            try:
+                                start_daily = await self.snapster.start_daily()
+                                if start_daily.get('result') is True:
+                                    self.success(f"Daily bonus claimed!")
 
-                    init_data = f"query_id={query_id}&user={user_data}&auth_date={auth_date}&hash={hash_value}"
-                    http_client.headers['Telegram-Data'] = init_data
-                    http_client.headers['User-Agent'] = generate_random_user_agent(device_type='android', browser_type='chrome')
+                            except Exception as error:
+                                logger.error(f"{self.session_name} | Unknown error while daily bonus: {error}")
+                                await asyncio.sleep(delay=3)
 
-                    status = await self.daily_claim(http_client=http_client)
-                    if status:
-                        delay = random.randint(3600, 21600)
-                        hours = delay // 3600
-                        minutes = (delay % 3600) // 60
-                        seconds = delay % 60
-                        logger.debug(f"{self.session_name} | Sleep {hours}h {minutes}m {seconds}s")
-                        await asyncio.sleep(delay)
-                    else:
-                        await asyncio.sleep(6)
+                        if settings.AUTO_FARM:
+                            await self.auto_farm()
 
-                except InvalidSession as error:
-                    raise error
+                        if settings.AUTO_TASKS:
+                            await self.auto_tasks()
 
-                except Exception as error:
-                    logger.error(f"{self.session_name} | Unknown error: {html.escape(str(error))}")
-                    await asyncio.sleep(3)
+                        delay = bulat_utils.get_random_delay(6, 11)
+                        (h, min) = bulat_utils.get_hours_and_minutes(delay)
+                        self.info(f"Sleep for {h} hours {min} minutes")
+                        
+                        await http_client.close()
+                        if proxy_conn:
+                            if not proxy_conn.closed:
+                                proxy_conn.close()
+
+                        await asyncio.sleep(delay=delay)
+
+                    except InvalidSession as error:
+                        raise error
+
+                    except Exception as error:
+                        logger.error(f"{self.session_name} | Unknown error: {html.escape(str(error))}")
+                        await asyncio.sleep(3)
+
+    def __prepare_http_client(self, http_client: CloudflareScraper, tg_web_data: str) -> CloudflareScraper:
+        tg_web_data_parts = tg_web_data.split('&')
+        query_id = tg_web_data_parts[0].split('=')[1]
+        user_data = quote(tg_web_data_parts[1].split('=')[1])
+        auth_date = tg_web_data_parts[2].split('=')[1]
+        hash_value = tg_web_data_parts[3].split('=')[1]
+
+        init_data = f"query_id={query_id}&user={user_data}&auth_date={auth_date}&hash={hash_value}"
+        http_client.headers['Telegram-Data'] = init_data
+        http_client.headers['User-Agent'] = generate_random_user_agent(device_type='android', browser_type='chrome')
+
+        return http_client
 
 async def run_tapper(tg_client: Client, proxy: str | None):
     try:
