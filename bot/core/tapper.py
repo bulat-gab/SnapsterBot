@@ -2,7 +2,6 @@ import asyncio
 import sys
 from urllib.parse import unquote, quote
 import aiohttp
-import json
 import html
 from aiocfscrape import CloudflareScraper
 from aiohttp_proxy import ProxyConnector
@@ -10,12 +9,10 @@ from better_proxy import Proxy
 from pyrogram import Client
 from pyrogram.errors import Unauthorized, UserDeactivated, AuthKeyUnregistered, FloodWait
 from pyrogram.raw.functions.messages import RequestWebView
-from datetime import datetime
-from time import time
+
 from random import randint
 
 from bot.core.snapster_client import SnapsterClient
-from bot.utils.datetime_utils import convert_to_local_and_unix
 from .agents import generate_random_user_agent
 from bot.utils import logger
 from bot.exceptions import InvalidSession
@@ -166,53 +163,54 @@ class Tapper:
 
             await asyncio.sleep(delay=random_delay)
 
-            while True:
-                 proxy_conn = ProxyConnector().from_url(proxy) if proxy else None
-                 async with CloudflareScraper(headers=headers, connector=proxy_conn) as http_client:
-                    if proxy:
-                        await self.check_proxy(http_client=http_client, proxy=proxy)
+        while True:
+            proxy_conn = ProxyConnector().from_url(proxy) if proxy else None
+            async with CloudflareScraper(headers=headers, connector=proxy_conn) as http_client:
+                if proxy:
+                    await self.check_proxy(http_client=http_client, proxy=proxy)
+                
+                tg_web_data = await self.get_tg_web_data(proxy=proxy)
+                if not tg_web_data:
+                    self.critical("Could not get tg_web_data")
+                    sys.exit()
+                http_client = self.__prepare_http_client(http_client, tg_web_data)
+                self.snapster = SnapsterClient(self.session_name, self.user_id, http_client)
+                
+
+                try:
+                    if settings.DAILY_BONUS:
+                        try:
+                            start_daily = await self.snapster.start_daily()
+                            if start_daily.get('result') is True:
+                                self.success(f"Daily bonus claimed!")
+
+                        except Exception as error:
+                            logger.error(f"{self.session_name} | Unknown error while daily bonus: {error}")
+                            await asyncio.sleep(delay=3)
+
+                    if settings.AUTO_FARM:
+                        await self.auto_farm()
+
+                    if settings.AUTO_TASKS:
+                        await self.auto_tasks()
+
+                    delay = bulat_utils.get_random_delay(6, 11)
+                    (h, min) = bulat_utils.get_hours_and_minutes(delay)
+                    self.info(f"Sleep for {h} hours {min} minutes")
                     
-                    tg_web_data = await self.get_tg_web_data(proxy=proxy)
-                    if not tg_web_data:
-                        self.critical("Could not get tg_web_data")
-                        sys.exit()
-                    http_client = self.__prepare_http_client(http_client, tg_web_data)
-                    self.snapster = SnapsterClient(self.session_name, self.user_id, http_client)
+                    await http_client.close()
+                    if proxy_conn:
+                        if not proxy_conn.closed:
+                            proxy_conn.close()
 
-                    try:
-                        if settings.DAILY_BONUS:
-                            try:
-                                start_daily = await self.snapster.start_daily()
-                                if start_daily.get('result') is True:
-                                    self.success(f"Daily bonus claimed!")
+                    await asyncio.sleep(delay=delay)
 
-                            except Exception as error:
-                                logger.error(f"{self.session_name} | Unknown error while daily bonus: {error}")
-                                await asyncio.sleep(delay=3)
+                except InvalidSession as error:
+                    raise error
 
-                        if settings.AUTO_FARM:
-                            await self.auto_farm()
-
-                        if settings.AUTO_TASKS:
-                            await self.auto_tasks()
-
-                        delay = bulat_utils.get_random_delay(6, 11)
-                        (h, min) = bulat_utils.get_hours_and_minutes(delay)
-                        self.info(f"Sleep for {h} hours {min} minutes")
-                        
-                        await http_client.close()
-                        if proxy_conn:
-                            if not proxy_conn.closed:
-                                proxy_conn.close()
-
-                        await asyncio.sleep(delay=delay)
-
-                    except InvalidSession as error:
-                        raise error
-
-                    except Exception as error:
-                        logger.error(f"{self.session_name} | Unknown error: {html.escape(str(error))}")
-                        await asyncio.sleep(3)
+                except Exception as error:
+                    logger.error(f"{self.session_name} | Unknown error: {html.escape(str(error))}")
+                    await asyncio.sleep(3)
 
     def __prepare_http_client(self, http_client: CloudflareScraper, tg_web_data: str) -> CloudflareScraper:
         tg_web_data_parts = tg_web_data.split('&')
