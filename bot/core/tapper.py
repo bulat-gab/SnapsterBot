@@ -175,7 +175,7 @@ class Tapper:
                     sys.exit()
                 http_client = self.__prepare_http_client(http_client, tg_web_data)
                 self.snapster = SnapsterClient(self.session_name, self.user_id, http_client)
-                
+
 
                 try:
                     if settings.DAILY_BONUS:
@@ -194,7 +194,7 @@ class Tapper:
                     if settings.AUTO_TASKS:
                         await self.auto_tasks()
 
-                    delay = bulat_utils.get_random_delay(6, 11)
+                    delay = bulat_utils.get_random_delay(settings.RANDOM_SLEEP_DELAY[0], settings.RANDOM_SLEEP_DELAY[1])
                     (h, min) = bulat_utils.get_hours_and_minutes(delay)
                     self.info(f"Sleep for {h} hours {min} minutes")
                     

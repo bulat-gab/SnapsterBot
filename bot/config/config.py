@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     AUTO_FARM: bool = True
     AUTO_TASKS: bool = True
     DAILY_BONUS: bool = True
+    
+    RANDOM_SLEEP_DELAY: list[int] = [2, 6]
 
     USE_RANDOM_DELAY_IN_RUN: bool = True
     RANDOM_DELAY_IN_RUN: list[int] = [0, 15]
