@@ -17,7 +17,7 @@ from bot.utils import logger
 from bot.exceptions import InvalidSession
 from .headers import headers
 from bot.config import settings
-from bot.utils import bulat_utils
+from bot.utils import proxy_utils_v1
 
 class Tapper:
     def __init__(self, tg_client: Client):
@@ -197,8 +197,8 @@ class Tapper:
                     if settings.AUTO_TASKS:
                         await self.auto_tasks()
 
-                    delay = bulat_utils.get_random_delay(settings.RANDOM_SLEEP_DELAY[0], settings.RANDOM_SLEEP_DELAY[1])
-                    (h, min) = bulat_utils.get_hours_and_minutes(delay)
+                    delay = proxy_utils_v1.get_random_delay(settings.RANDOM_SLEEP_DELAY[0], settings.RANDOM_SLEEP_DELAY[1])
+                    (h, min) = proxy_utils_v1.get_hours_and_minutes(delay)
                     self.info(f"Sleep for {h} hours {min} minutes")
                     
                     await http_client.close()

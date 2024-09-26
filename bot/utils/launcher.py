@@ -2,7 +2,6 @@ import os
 import glob
 import asyncio
 import argparse
-from itertools import cycle
 
 from pyrogram import Client
 from better_proxy import Proxy
@@ -12,7 +11,7 @@ from bot.utils import logger
 from bot.core.tapper import run_tapper
 from bot.core.registrator import register_sessions
 
-from bot.utils.bulat_utils import get_proxies_with_clients
+from bot.utils.proxy_utils_v1 import create_tg_client_proxy_pairs
 
 
 start_text = """
@@ -82,8 +81,6 @@ async def process() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("-a", "--action", type=int, help="Action to perform")
 
-    # logger.info(f"Detected {len(get_session_names())} sessions | {len(get_proxies())} proxies")
-
     action = parser.parse_args().action
 
     if not action:
@@ -109,7 +106,7 @@ async def process() -> None:
 
 
 async def run_tasks(tg_clients: list[Client]):
-    client_proxy_list = get_proxies_with_clients(tg_clients)
+    client_proxy_list = create_tg_client_proxy_pairs(tg_clients)
 
     tasks = [
         asyncio.create_task(

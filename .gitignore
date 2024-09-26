@@ -1,4 +1,5 @@
 do_not_commit*
+.vscode
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
